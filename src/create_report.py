@@ -1,31 +1,90 @@
-"""Create a Power BI report (PBIR-Legacy) bound to the ConstantoOntology semantic model,
-via the Fabric REST API. Tells the recall-traceability story with a card + tables."""
+"""Create (or update) a Power BI report (PBIR-Legacy) bound to the ConstantoOntology
+semantic model via the Fabric REST API. Tells the recall-traceability story with
+cards + tables.
+
+Usage:
+  # create a new report
+  python src/create_report.py <fabric_token> <workspaceId> <semanticModelId>
+  # update an existing report in place
+  python src/create_report.py <fabric_token> <workspaceId> <semanticModelId> <reportId>
+
+Why this file looks the way it does
+-----------------------------------
+Two things are load-bearing and easy to get wrong:
+
+1. `prototypeQuery.Where` is only a cached query *hint*. The Power BI service
+   regenerates the visual's query from `projections`, so a predicate that lives
+   only in `prototypeQuery` is silently dropped at render time. Real filters must
+   go in the visual container's `filters` property.
+
+2. A table visual whose projections are *only* group-by columns gives the engine
+   nothing to anchor relationship traversal on, so SUMMARIZECOLUMNS cross-joins
+   the tables instead of joining them. Including at least one aggregation makes
+   the engine honour the relationships. Without it this report returned
+   1,033,340 rows (120 batches x 140 prescriptions x 60 patients) instead of 7.
+
+   The aggregation must sit on the *bridging* table -- the one on the many side of
+   both relationships. `batch` and `patient` are both on the one side, joined only
+   through `prescription`, so aggregating over `batch` still cross-joins (59,780
+   rows). Aggregating over `prescription` collapses it to the correct 7.
+"""
 import sys, json, uuid, base64, time, requests
 
 TOKEN = sys.argv[1]
-WS = "<WORKSPACE_ID>"
-MODEL_ID = "<SEMANTIC_MODEL_ID>"
+WS = sys.argv[2]
+MODEL_ID = sys.argv[3]
+REPORT_ID = sys.argv[4] if len(sys.argv) > 4 else None
 NAME = "Constanto Recall Traceability"
+
+SUM, COUNT_NON_NULL = 0, 5
 
 
 def gid():
     return "v" + uuid.uuid4().hex[:16]
 
 
-def col(src, entity, prop, name):
+def col(src, prop, name):
     return {"Column": {"Expression": {"SourceRef": {"Source": src}}, "Property": prop}, "Name": name}
 
 
-def where_recalled(src):
-    return [{"Condition": {"Comparison": {"ComparisonKind": 0,
-            "Left": {"Column": {"Expression": {"SourceRef": {"Source": src}}, "Property": "status"}},
-            "Right": {"Literal": {"Value": "'Recalled'"}}}}}]
+def agg(src, prop, func, name):
+    return {"Aggregation": {"Expression": {"Column": {
+        "Expression": {"SourceRef": {"Source": src}}, "Property": prop}}, "Function": func}, "Name": name}
 
 
-def container(x, y, w, h, cfg):
+def visual_filter(entity, prop, value):
+    """A real visual-level filter. This is what actually gets applied at render time."""
+    src = entity[0]
+    return [{
+        "name": uuid.uuid4().hex[:20],
+        "expression": {"Column": {"Expression": {"SourceRef": {"Entity": entity}}, "Property": prop}},
+        "filter": {
+            "Version": 2,
+            "From": [{"Name": src, "Entity": entity, "Type": 0}],
+            "Where": [{"Condition": {"In": {
+                "Expressions": [{"Column": {"Expression": {"SourceRef": {"Source": src}}, "Property": prop}}],
+                "Values": [[{"Literal": {"Value": "'" + value + "'"}}]]}}}],
+        },
+        "type": "Categorical",
+        "howCreated": 0,
+        "objects": {},
+        "isHiddenInViewMode": False,
+    }]
+
+
+def container(x, y, w, h, cfg, filters=None):
     return {"x": float(x), "y": float(y), "z": 0.0, "width": float(w), "height": float(h),
-            "config": json.dumps(cfg), "filters": "[]"}
+            "config": json.dumps(cfg),
+            "filters": json.dumps(filters) if filters else "[]"}
 
+
+def card_title(text):
+    return {"title": [{"properties": {"show": {"expr": {"Literal": {"Value": "true"}}},
+                                      "text": {"expr": {"Literal": {"Value": "'" + text + "'"}}}}}]}
+
+
+RECALLED = visual_filter("batch", "status", "Recalled")
+NON_GMP = visual_filter("supplier", "gmp_certified", "No")
 
 # --- Title textbox ---
 title_cfg = {
@@ -35,12 +94,12 @@ title_cfg = {
         "visualType": "textbox",
         "drillFilterOtherVisuals": True,
         "objects": {"general": [{"properties": {"paragraphs": [
-            {"textRuns": [{"value": "Constanto - Recall Traceability (supplier -> lot -> batch -> patient)",
+            {"textRuns": [{"value": "Constanto Pharma - Recall Traceability (supplier -> lot -> batch -> patient)",
                            "textStyle": {"fontSize": "22pt", "fontWeight": "bold", "color": "#0F4C81"}}]}]}}]}
     }
 }
 
-# --- Card: recalled batches count ---
+# --- Card: recalled batches ---
 card_cfg = {
     "name": gid(),
     "layouts": [{"id": 0, "position": {"x": 20, "y": 88, "z": 0, "width": 260, "height": 150, "tabOrder": 1}}],
@@ -50,17 +109,14 @@ card_cfg = {
         "prototypeQuery": {
             "Version": 2,
             "From": [{"Name": "b", "Entity": "batch", "Type": 0}],
-            "Select": [{"Aggregation": {"Expression": {"Column": {"Expression": {"SourceRef": {"Source": "b"}},
-                        "Property": "batch_id"}}, "Function": 5}, "Name": "CountNonNull(batch.batch_id)"}],
-            "Where": where_recalled("b")
+            "Select": [agg("b", "batch_id", COUNT_NON_NULL, "CountNonNull(batch.batch_id)")],
         },
         "drillFilterOtherVisuals": True,
-        "vcObjects": {"title": [{"properties": {"show": {"expr": {"Literal": {"Value": "true"}}},
-                     "text": {"expr": {"Literal": {"Value": "'Recalled batches'"}}}}}]}
+        "vcObjects": card_title("Recalled batches"),
     }
 }
 
-# --- Card: distinct affected patients (count on the filtered prescription side) ---
+# --- Card: affected patients ---
 card2_cfg = {
     "name": gid(),
     "layouts": [{"id": 0, "position": {"x": 300, "y": 88, "z": 0, "width": 260, "height": 150, "tabOrder": 2}}],
@@ -69,19 +125,15 @@ card2_cfg = {
         "projections": {"Values": [{"queryRef": "CountNonNull(prescription.patient_id)"}]},
         "prototypeQuery": {
             "Version": 2,
-            "From": [{"Name": "b", "Entity": "batch", "Type": 0},
-                     {"Name": "p", "Entity": "prescription", "Type": 0}],
-            "Select": [{"Aggregation": {"Expression": {"Column": {"Expression": {"SourceRef": {"Source": "p"}},
-                        "Property": "patient_id"}}, "Function": 5}, "Name": "CountNonNull(prescription.patient_id)"}],
-            "Where": where_recalled("b")
+            "From": [{"Name": "p", "Entity": "prescription", "Type": 0}],
+            "Select": [agg("p", "patient_id", COUNT_NON_NULL, "CountNonNull(prescription.patient_id)")],
         },
         "drillFilterOtherVisuals": True,
-        "vcObjects": {"title": [{"properties": {"show": {"expr": {"Literal": {"Value": "true"}}},
-                     "text": {"expr": {"Literal": {"Value": "'Affected patients'"}}}}}]}
+        "vcObjects": card_title("Affected patients"),
     }
 }
 
-# --- Table: recalled batches -> patients ---
+# --- Table: recalled batches -> patients (forward trace) ---
 table_cfg = {
     "name": gid(),
     "layouts": [{"id": 0, "position": {"x": 20, "y": 252, "z": 0, "width": 760, "height": 440, "tabOrder": 3}}],
@@ -90,25 +142,27 @@ table_cfg = {
         "projections": {"Values": [
             {"queryRef": "batch.batch_id"}, {"queryRef": "batch.formula_id"},
             {"queryRef": "prescription.prescription_id"}, {"queryRef": "patient.patient_id"},
-            {"queryRef": "patient.region"}]},
+            {"queryRef": "patient.region"},
+            {"queryRef": "CountNonNull(prescription.patient_id)"}]},
         "prototypeQuery": {
             "Version": 2,
             "From": [{"Name": "b", "Entity": "batch", "Type": 0},
                      {"Name": "p", "Entity": "prescription", "Type": 0},
                      {"Name": "a", "Entity": "patient", "Type": 0}],
             "Select": [
-                col("b", "batch", "batch_id", "batch.batch_id"),
-                col("b", "batch", "formula_id", "batch.formula_id"),
-                col("p", "prescription", "prescription_id", "prescription.prescription_id"),
-                col("a", "patient", "patient_id", "patient.patient_id"),
-                col("a", "patient", "region", "patient.region")],
-            "Where": where_recalled("b")
+                col("b", "batch_id", "batch.batch_id"),
+                col("b", "formula_id", "batch.formula_id"),
+                col("p", "prescription_id", "prescription.prescription_id"),
+                col("a", "patient_id", "patient.patient_id"),
+                col("a", "region", "patient.region"),
+                # Aggregation on the BRIDGE table (prescription) -- see module docstring.
+                agg("p", "patient_id", COUNT_NON_NULL, "CountNonNull(prescription.patient_id)")],
         },
         "drillFilterOtherVisuals": True
     }
 }
 
-# --- Table: backward trace supplier/lot for the recalled batches ---
+# --- Table: backward trace to the non-GMP supplier / lot ---
 supp_cfg = {
     "name": gid(),
     "layouts": [{"id": 0, "position": {"x": 800, "y": 252, "z": 0, "width": 460, "height": 440, "tabOrder": 4}}],
@@ -116,19 +170,18 @@ supp_cfg = {
         "visualType": "tableEx",
         "projections": {"Values": [
             {"queryRef": "raw_material_lot.lot_id"}, {"queryRef": "supplier.name"},
-            {"queryRef": "supplier.gmp_certified"}, {"queryRef": "raw_material_lot.qc_status"}]},
+            {"queryRef": "supplier.gmp_certified"}, {"queryRef": "raw_material_lot.qc_status"},
+            {"queryRef": "Sum(raw_material_lot.quantity_g)"}]},
         "prototypeQuery": {
             "Version": 2,
             "From": [{"Name": "l", "Entity": "raw_material_lot", "Type": 0},
                      {"Name": "s", "Entity": "supplier", "Type": 0}],
             "Select": [
-                col("l", "raw_material_lot", "lot_id", "raw_material_lot.lot_id"),
-                col("s", "supplier", "name", "supplier.name"),
-                col("s", "supplier", "gmp_certified", "supplier.gmp_certified"),
-                col("l", "raw_material_lot", "qc_status", "raw_material_lot.qc_status")],
-            "Where": [{"Condition": {"Comparison": {"ComparisonKind": 0,
-                      "Left": {"Column": {"Expression": {"SourceRef": {"Source": "s"}}, "Property": "gmp_certified"}},
-                      "Right": {"Literal": {"Value": "'No'"}}}}}]
+                col("l", "lot_id", "raw_material_lot.lot_id"),
+                col("s", "name", "supplier.name"),
+                col("s", "gmp_certified", "supplier.gmp_certified"),
+                col("l", "qc_status", "raw_material_lot.qc_status"),
+                agg("l", "quantity_g", SUM, "Sum(raw_material_lot.quantity_g)")],
         },
         "drillFilterOtherVisuals": True
     }
@@ -141,10 +194,10 @@ section = {
     "ordinal": 0,
     "visualContainers": [
         container(20, 16, 1240, 56, title_cfg),
-        container(20, 88, 260, 150, card_cfg),
-        container(300, 88, 260, 150, card2_cfg),
-        container(20, 252, 760, 440, table_cfg),
-        container(800, 252, 460, 440, supp_cfg),
+        container(20, 88, 260, 150, card_cfg, RECALLED),
+        container(300, 88, 260, 150, card2_cfg, RECALLED),
+        container(20, 252, 760, 440, table_cfg, RECALLED),
+        container(800, 252, 460, 440, supp_cfg, NON_GMP),
     ],
     "config": "{}",
     "displayOption": 1,
@@ -187,12 +240,19 @@ parts = [
     {"path": "report.json", "payload": b64(report_layout), "payloadType": "InlineBase64"},
 ]
 
-body = {"displayName": NAME,
-        "description": "Power BI report over ConstantoOntology: recall traceability from non-GMP supplier lot to affected patients.",
-        "definition": {"parts": parts}}
+H = {"Authorization": "Bearer " + TOKEN, "Content-Type": "application/json"}
+BASE = "https://api.fabric.microsoft.com/v1/workspaces/" + WS + "/reports"
 
-H = {"Authorization": f"Bearer {TOKEN}", "Content-Type": "application/json"}
-r = requests.post(f"https://api.fabric.microsoft.com/v1/workspaces/{WS}/reports", headers=H, json=body, timeout=120)
+if REPORT_ID:
+    url = BASE + "/" + REPORT_ID + "/updateDefinition"
+    body = {"definition": {"parts": parts}}
+else:
+    url = BASE
+    body = {"displayName": NAME,
+            "description": "Recall traceability from a non-GMP supplier lot to affected patients.",
+            "definition": {"parts": parts}}
+
+r = requests.post(url, headers=H, json=body, timeout=120)
 print("POST status:", r.status_code)
 if r.status_code == 202:
     loc = r.headers.get("Location")
@@ -205,6 +265,6 @@ if r.status_code == 202:
             print(json.dumps(p.json(), indent=2)[:2000])
             break
 elif r.status_code in (200, 201):
-    print(json.dumps(r.json(), indent=2)[:800])
+    print(json.dumps(r.json(), indent=2)[:800] if r.text else "OK")
 else:
     print(r.text[:2500])

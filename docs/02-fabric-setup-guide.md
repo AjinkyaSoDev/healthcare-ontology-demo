@@ -147,6 +147,21 @@ A ready-to-present report is provisioned over the model — id
 * Built + verified via `src\create_report.py` (PBIR-Legacy, Fabric REST API). It filters
   `batch[status] = "Recalled"` at the visual level.
 
+> **Two pitfalls when authoring PBIR-Legacy visuals via the REST API** (both were live
+> bugs in an earlier version of this report — it loaded ~1M rows and showed the wrong
+> numbers):
+>
+> 1. **Put filters in the visual container's `filters` property, not just
+>    `prototypeQuery.Where`.** `prototypeQuery` is a cached query *hint*; the service
+>    regenerates the visual's query from `projections` at render time and silently drops
+>    a predicate that only lives there.
+> 2. **Every table visual needs at least one aggregation, on the *bridging* table.**
+>    With group-by columns only, `SUMMARIZECOLUMNS` cross-joins instead of joining.
+>    Here `batch` and `patient` are both on the *one* side and are connected only through
+>    `prescription`, so the aggregation must be over `prescription`. Measured on this
+>    model: no aggregation → **1,033,340 rows**; aggregation on `batch` → **59,780 rows**;
+>    aggregation on `prescription` → **7 rows**.
+
 > Note on relationships: 5 edges are set **inactive** (operator→site, equipment→site,
 > batch_raw_material_lot→ingredient, prescription→formula, formula_ingredient→ingredient)
 > to keep a single unambiguous active filter path. They still document the ontology and
