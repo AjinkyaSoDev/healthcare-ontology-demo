@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# Fabric item exports (contain tenant-specific identifiers)
+fabric/_export.txt
+
+# Local artifacts
+*.pbix
+.env

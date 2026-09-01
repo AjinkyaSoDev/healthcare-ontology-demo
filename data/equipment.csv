@@ -1,0 +1,6 @@
+equipment_id,site_id,name,type
+EQ-01,SITE-01,Unguator Ointment Mill,Mixing
+EQ-02,SITE-01,Capsule Filling Machine CFM-100,Encapsulation
+EQ-03,SITE-02,Laminar Flow Hood LFH-7,Aseptic
+EQ-04,SITE-02,Sterile Filtration Unit SFU-3,Filtration
+EQ-05,SITE-03,Ointment Mill OM-2,Mixing

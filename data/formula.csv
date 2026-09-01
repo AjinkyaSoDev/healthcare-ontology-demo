@@ -1,0 +1,8 @@
+formula_id,name,dosage_form,route,therapeutic_area
+FORM-01,Estradiol/Progesterone 1mg/100mg Transdermal Cream,Transdermal Cream,Topical,HRT
+FORM-02,Testosterone 2% Transdermal Cream,Transdermal Cream,Topical,HRT
+FORM-03,Ketamine 10% Topical Cream,Topical Cream,Topical,Pain
+FORM-04,Gabapentin/Baclofen 6%/2% Cream,Topical Cream,Topical,Pain
+FORM-05,Low Dose Naltrexone 4.5mg Capsule,Capsule,Oral,Immunology
+FORM-06,Tacrolimus 0.03% Ophthalmic Suspension,Suspension,Ophthalmic,Immunology
+FORM-07,Gabapentin 100mg/mL Oral Suspension,Suspension,Oral,Pain

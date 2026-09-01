@@ -1,0 +1,6 @@
+operator_id,name,role,site_id
+OP-01,M. van Dijk,Pharmacist,SITE-01
+OP-02,S. Jansen,Technician,SITE-01
+OP-03,L. Garcia,Pharmacist,SITE-02
+OP-04,A. Ferrer,Technician,SITE-02
+OP-05,J. Miller,Pharmacist,SITE-03

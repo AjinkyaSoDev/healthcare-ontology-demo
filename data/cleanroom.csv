@@ -1,0 +1,5 @@
+room_id,site_id,name,iso_class
+ROOM-01,SITE-01,Non-sterile Suite A,ISO 8
+ROOM-02,SITE-01,Sterile Suite B,ISO 7
+ROOM-03,SITE-02,Sterile Suite A,ISO 7
+ROOM-04,SITE-03,Non-sterile Suite A,ISO 8

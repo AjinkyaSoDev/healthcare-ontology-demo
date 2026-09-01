@@ -1,0 +1,6 @@
+supplier_id,name,country,gmp_certified
+SUP-01,PharmaRaw GmbH,Germany,Yes
+SUP-02,Actives Iberia SA,Spain,Yes
+SUP-03,GlobalAPI Trading,India,Yes
+SUP-04,Excipient Partners BV,Netherlands,Yes
+SUP-05,LowCost Chem Ltd,China,No

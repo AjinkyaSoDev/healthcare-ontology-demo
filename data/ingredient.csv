@@ -1,0 +1,14 @@
+ingredient_id,name,type,cas_number,hazard_class,category
+ING-01,Estradiol,API,50-28-2,H360,hormone
+ING-02,Progesterone,API,57-83-0,H360,hormone
+ING-03,Testosterone,API,58-22-0,H360,hormone
+ING-04,Ketamine HCl,API,1867-66-9,H302,analgesic
+ING-05,Gabapentin,API,60142-96-3,H302,analgesic
+ING-06,Baclofen,API,1134-47-0,H302,muscle-relaxant
+ING-07,Naltrexone HCl,API,16676-29-2,H302,LDN
+ING-08,Tacrolimus,API,104987-11-3,H302,immunomodulator
+ING-09,Constanto PCCA Lipoderm,Excipient,NA,None,transdermal-base
+ING-10,VersaPro Cream Base,Excipient,NA,None,cream-base
+ING-11,SyrSpend SF pH4,Excipient,NA,None,suspension-base
+ING-12,Microcrystalline Cellulose,Excipient,9004-34-6,None,filler
+ING-13,Purified Water,Excipient,7732-18-5,None,solvent
